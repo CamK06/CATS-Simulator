@@ -21,42 +21,61 @@ static int slave_pty;
 static std::string serial_port;
 static const uint8_t CBOR_BEGIN[3] = { 0xd9, 0xd9, 0xf7 };
 
+void hexdump(uint8_t* data, size_t len)
+{
+	static char buf[255];
+	int buf_idx = 0;
+	for(int i = 0; i < len; i++) {
+		if(i % 16 == 0 && i != 0) {
+			flog::info(buf);
+			std::memset(buf, 0x00, 255);
+			buf_idx = 0;
+		}
+		sprintf(buf + buf_idx, "%02X ", data[i]);
+		buf_idx += 3;
+	}
+}
+
 void print_packet(cats_packet_t* pkt)
 {
     cats_whisker_data_t* data;
+	static char buf[8192];
     if(cats_packet_get_identification(pkt, (cats_ident_whisker_t**)&data) == CATS_SUCCESS) {
-        printf("IDENT: \t%s-%d [ICON: %d]\n", 
+        sprintf(buf, "IDENT: \t%s-%d [ICON: %d]", 
                 data->identification.callsign, 
                 data->identification.ssid, 
                 data->identification.icon
         );
+		flog::info(buf);
     }
     if(cats_packet_get_route(pkt, (cats_route_whisker_t**)&data) == CATS_SUCCESS) {
-        printf("ROUTE: \t(MAX %d) ", data->route.max_digipeats);
+        int written = sprintf(buf, "ROUTE: \t(MAX %d) ", data->route.max_digipeats);
         cats_route_hop_t* hop = &(data->route.hops);
         while(hop != NULL) {
             if(hop->hop_type == CATS_ROUTE_INET) {
-                printf("[NET]");
+                written += sprintf(buf + written, "[NET]");
             }
             else if(hop->hop_type == CATS_ROUTE_FUTURE) {
-                printf("%s-%d*", hop->callsign, hop->ssid);
+                written += sprintf(buf + written, "%s-%d*", hop->callsign, hop->ssid);
             }
             else if(hop->hop_type == CATS_ROUTE_PAST) {
-                printf("%s-%d [%.1f dBm]", hop->callsign, hop->ssid, hop->rssi);
+                written += sprintf(buf + written, "%s-%d [%.1f dBm]", hop->callsign, hop->ssid, hop->rssi);
             }
             if(hop->next != NULL) {
-                printf(" -> ");
-            }
+                written += sprintf(buf + written, " -> ");
+            }int written = 0;
             hop = hop->next;
         }
-        printf("\n");
+        flog::info(buf);
+		written = 0;
     }
     char comment[CATS_MAX_PKT_LEN];
     if(cats_packet_get_comment(pkt, comment) == CATS_SUCCESS) {
-        printf("CMNT: \t'%s'\n", comment);
+        sprintf(buf, "CMNT: \t'%s'", comment);
+		flog::info(buf);
     }
     if(cats_packet_get_gps(pkt, (cats_gps_whisker_t**)&data) == CATS_SUCCESS) {
-        printf("GPS: \t(%.4f, %.4f) +/- %d m, v = %.2f m/s [N %.2f] deg\nALT: \t%.2f m\n",
+        sprintf(buf, "GPS: \t(%.4f, %.4f) +/- %d m, v = %.2f m/s [N %.2f] deg",
                 data->gps.latitude,
                 data->gps.longitude,
                 data->gps.max_error,
@@ -64,47 +83,72 @@ void print_packet(cats_packet_t* pkt)
                 data->gps.heading,
                 data->gps.altitude
         );
+		flog::info(buf);
+		sprintf(buf, "ALT: \t%.2f m", data->gps.altitude);
+		flog::info(buf);
     }
     if(cats_packet_get_nodeinfo(pkt, (cats_nodeinfo_whisker_t**)&data) == CATS_SUCCESS) {
         if(data->node_info.hardware_id.enabled && data->node_info.software_id.enabled) {
-            printf("HW: \t0x%04x SW: 0x%02x\n", data->node_info.hardware_id.val, data->node_info.software_id.val);
+            sprintf(buf, "HW: \t0x%04x SW: 0x%02x", data->node_info.hardware_id.val, data->node_info.software_id.val);
+			flog::info(buf);
         }
         else if(data->node_info.hardware_id.enabled) {
-            printf("HW: \t0x%04x\n", data->node_info.hardware_id.val);
+            sprintf(buf, "HW: \t0x%04x", data->node_info.hardware_id.val);
+			flog::info(buf);
         }
         else if(data->node_info.software_id.enabled) {
-            printf("SW: \t0x%02x\n", data->node_info.software_id.val);
+            sprintf(buf, "SW: \t0x%02x", data->node_info.software_id.val);
+			flog::info(buf);
         }
 
         if(data->node_info.uptime.enabled) {
-            printf("UTIME: \t%d s\n", data->node_info.uptime.val);
+            sprintf(buf, "UTIME: \t%d s", data->node_info.uptime.val);
+			flog::info(buf);
         }
         if(data->node_info.ant_height.enabled) {
-            printf("VERT: \t%d m\n", data->node_info.ant_height.val);
+            sprintf(buf, "VERT: \t%d m", data->node_info.ant_height.val);
+			flog::info(buf);
         }
         if(data->node_info.ant_gain.enabled) {
-            printf("GAIN: \t%.2f dBi\n", data->node_info.ant_gain.val);
+            sprintf(buf, "GAIN: \t%.2f dBi", data->node_info.ant_gain.val);
+			flog::info(buf);
         }
         if(data->node_info.tx_power.enabled) {
-            printf("TXP: \t%d dBm\n", data->node_info.tx_power.val);
+            sprintf(buf, "TXP: \t%d dBm", data->node_info.tx_power.val);
+			flog::info(buf);
         }
         if(data->node_info.voltage.enabled) {
-            printf("VOLTS: \t%d V\n", data->node_info.voltage.val);
+            sprintf(buf, "VOLTS: \t%d V", data->node_info.voltage.val);
+			flog::info(buf);
         }
         if(data->node_info.temperature.enabled) {
-            printf("TEMP: \t%d C\n", data->node_info.temperature.val);
+            sprintf(buf, "TEMP: \t%d C", data->node_info.temperature.val);
+			flog::info(buf);
         }
     }
 	cats_whisker_t** arbitrary;
 	if((cats_packet_get_arbitrary(pkt, &arbitrary) != CATS_FAIL)
 	&& arbitrary[0]->data.raw[0] == 0xc0) {
-		printf("SRC: \tAPRS\n");
+		flog::info("SRC: \tAPRS");
 	}
 	else {
-		printf("SRC: \tCATS\n");
+		flog::info("SRC: \tCATS");
 	}
+}
 
-    printf("\n");
+void send_pkt(cats_packet_t* pkt)
+{
+	uint8_t buf[CATS_MAX_PKT_LEN];
+	int len = cats_packet_semi_encode(pkt, buf);
+	if(len == CATS_FAIL) {
+		flog::error("Failed to encode packet");
+		return;
+	}
+	len = cats_radio_iface_encode(buf, len, 0);
+	
+	if(write(radio_fd, buf, len) < 0) {
+		flog::error("Failed to write to serial port");
+	}
 }
 
 void rx_callback(int sig)
@@ -123,6 +167,7 @@ void rx_callback(int sig)
 	}
 	if(memcmp(buffer, CBOR_BEGIN, 3) != 0) {
 		flog::error("Invalid packet");
+		hexdump(buffer, buf_ptr);
 		memset(buffer, 0, CATS_MAX_PKT_LEN);
 		buf_ptr = 0;
 		return;
@@ -135,6 +180,10 @@ void rx_callback(int sig)
 		return;
 	}
 
+	flog::info("Serial RX:");
+	hexdump(buffer, buf_ptr);
+	printf("\n");
+
 	cats_packet_t* pkt;
 	cats_packet_prepare(&pkt);
 	if(cats_packet_semi_decode(pkt, buffer, r) == CATS_FAIL) {
@@ -145,8 +194,12 @@ void rx_callback(int sig)
 		return;
 	}
 
-	flog::info("SERIAL READ:");
+	flog::info("Decoded packet:");
 	print_packet(pkt);	
+	cats_packet_destroy(&pkt);
+	memset(buffer, 0, CATS_MAX_PKT_LEN);
+	buf_ptr = 0;
+	printf("\n\n\n");
 }
 
 void open_pty()
